@@ -9,6 +9,7 @@ from chatkit.server import ChatKitServer
 from chatkit.types import ThreadMetadata, ThreadStreamEvent, UserMessageItem
 from pydantic import BaseModel
 
+from citations import CitationConverter, CitationRenderer
 from memory_store import MemoryStore
 
 MAX_RECENT_ITEMS = 30
@@ -100,7 +101,10 @@ class StarterChatServer(ChatKitServer[dict[str, Any]]):
             context=agent_context,
         )
 
+        citation_renderer = CitationRenderer()
         async for event in stream_agent_response(
-            agent_context, CitationCompatibleStream(result)
+            agent_context,
+            CitationCompatibleStream(result),
+            converter=CitationConverter(),
         ):
-            yield event
+            yield citation_renderer.process(event)
