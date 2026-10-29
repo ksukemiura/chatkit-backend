@@ -11,7 +11,6 @@ from pydantic import BaseModel
 
 from citations import CitationConverter, CitationRenderer
 from memory_store import MemoryStore
-from tool_progress import ToolProgressStream
 
 MAX_RECENT_ITEMS = 30
 MODEL = "gpt-6-luna"
@@ -105,7 +104,7 @@ class StarterChatServer(ChatKitServer[dict[str, Any]]):
         citation_renderer = CitationRenderer()
         async for event in stream_agent_response(
             agent_context,
-            CitationCompatibleStream(ToolProgressStream(result, agent_context)),
+            CitationCompatibleStream(result),
             converter=CitationConverter(),
         ):
             yield citation_renderer.process(event)
