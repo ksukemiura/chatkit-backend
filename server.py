@@ -1,15 +1,48 @@
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from typing import Any
 
-from agents import Agent, Runner, WebSearchTool
+from agents import Agent, Runner, RunResultStreaming, WebSearchTool
+from agents.stream_events import StreamEvent
 from chatkit.agents import AgentContext, simple_to_agent_input, stream_agent_response
 from chatkit.server import ChatKitServer
 from chatkit.types import ThreadMetadata, ThreadStreamEvent, UserMessageItem
+from pydantic import BaseModel
 
 from memory_store import MemoryStore
 
 MAX_RECENT_ITEMS = 30
 MODEL = "gpt-6-luna"
+
+
+class CitationCompatibleStream:
+    """Normalize streaming annotation models for ChatKit 1.6.5.
+
+    OpenAI uses different annotation classes for streaming events and final
+    output. ChatKit validates against the final-output classes, so pass plain
+    data at that boundary instead of an incompatible Pydantic instance.
+    """
+
+    def __init__(self, result: RunResultStreaming) -> None:
+        self.result = result
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.result, name)
+
+    async def stream_events(self) -> AsyncIterator[StreamEvent]:
+        async for event in self.result.stream_events():
+            if (
+                event.type == "raw_response_event"
+                and event.data.type == "response.output_text.annotation.added"
+                and isinstance(event.data.annotation, BaseModel)
+            ):
+                event = replace(
+                    event,
+                    data=event.data.model_copy(
+                        update={"annotation": event.data.annotation.model_dump()}
+                    ),
+                )
+            yield event
 
 
 assistant_agent = Agent[AgentContext[dict[str, Any]]](
@@ -67,5 +100,7 @@ class StarterChatServer(ChatKitServer[dict[str, Any]]):
             context=agent_context,
         )
 
-        async for event in stream_agent_response(agent_context, result):
+        async for event in stream_agent_response(
+            agent_context, CitationCompatibleStream(result)
+        ):
             yield event
